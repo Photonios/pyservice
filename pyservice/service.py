@@ -95,7 +95,7 @@ class PyService(object):
         try:
             self.service = self.platform_map[platform.system()](self.name, self.description, self.auto_start)
         except Exception as error:
-            print(str(error))
+            print('* Error: %s' % str(error))
             return
 
         # Are there any command line parameters?
@@ -108,7 +108,8 @@ class PyService(object):
             cmd_option = '--run'
 
         # Call the associated function
-        self.option_map[cmd_option]()
+        if not self.option_map[cmd_option]():
+            sys.exit(1)
 
     def started(self):
         """Virtual, to be overridden by the derived class.
@@ -178,7 +179,7 @@ class PyService(object):
         """
 
         # Make sure the service is not already running
-        if not self.service.is_running():
+        if self.service.is_running():
             print('* Already running')
             return False
 
@@ -200,7 +201,7 @@ class PyService(object):
         """
 
         # Make sure that the service is running
-        if self.service.is_running():
+        if not self.service.is_running():
             print('* Not running')
             return False
 

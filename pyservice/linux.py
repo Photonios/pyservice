@@ -23,6 +23,9 @@ import pyservice
 import os
 import stat
 import sys
+import atexit
+import signal
+import time
 from .platform_base import PyServicePlatformBase
 
 class PyServiceLinux(PyServicePlatformBase):
@@ -52,11 +55,12 @@ class PyServiceLinux(PyServicePlatformBase):
             raise pyservice.UnsupportedPlatformError('`/etc/init.d` does not exists, this is probably not a Debian based distribution.')
 
         # Make sure the path that PID files are stored in exists
-        if not os.path.exists('/pids/'):
-            os.mkdir('/pids/')
+        pid_files_directory = os.path.join(os.path.expanduser('~'), '.pyservice_pids')
+        if not os.path.exists(pid_files_directory):
+            os.mkdir(pid_files_directory)
 
         # Build up some paths
-        self.pid_file = '/pids/%s.pid' % self.name
+        self.pid_file = os.path.join(pid_files_directory, self.name + '.pid')
         self.control_script = '/etc/init.d/%s' % self.name
 
     def start(self):
@@ -67,7 +71,52 @@ class PyServiceLinux(PyServicePlatformBase):
             it failed.
         """
 
-        raise NotImplementedError('`start` not implemented in derived class')
+        # Attempt to fork parent process (double fork)
+        try:
+            pid = os.fork()
+            if pid > 0:
+                    sys.exit(0)
+        except OSError as error:
+            print('* Unable to fork parent process (1): %s' % format(error))
+            return False
+
+        # Decouple from parent environment
+        os.setsid()
+        os.umask(0)
+
+        # Do the second fork
+        try:
+            pid = os.fork()
+            if pid > 0:
+                    sys.exit(0)
+        except OSError as error:
+            print('* Unable to fork parent process (2): %s' % format(error))
+            return False
+
+        # Register cleanup function
+        atexit.register(self._clean)
+
+        # Write the PID file
+        pid = str(os.getpid())
+        try:
+            file = open(self.pid_file, 'w')
+            file.write(str(pid) + '\n')
+            file.close()
+        except Exception as error:
+            print('* Unable to write PID file to `%s`: %s' % self.pid_file, format(error))
+            return False
+
+        # Redirect standard file descriptors to /dev/null
+        sys.stdout.flush()
+        sys.stdin.flush()
+        standard_in = open(os.devnull, 'r')
+        standard_out = open(os.devnull, 'a+')
+        standard_error = open(os.devnull, 'a+')
+
+        os.dup2(standard_in.fileno(), sys.stdin.fileno())
+        os.dup2(standard_out.fileno(), sys.stdout.fileno())
+        os.dup2(standard_error.fileno(), sys.stderr.fileno())
+        return True
 
     def stop(self):
         """Stops the service (if it's installed and running).
@@ -77,7 +126,41 @@ class PyServiceLinux(PyServicePlatformBase):
             when it failed.
         """
 
-        raise NotImplementedError('`stop` not implemented in derived class')
+        # Attempt to read the PID from the pid file
+        file = open(self.pid_file, 'r')
+
+        try:
+            pid = int(file.read().strip())
+        except:
+            print("* Unable to read PID file")
+            return False
+
+        file.close()
+
+        # Attempt to kill the process, continue to attempt to kill it until
+        # the process has died with a maximum of 5 attempts
+        attempts = 0
+        try:
+
+            while attempts < 5:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.2)
+                attempts += 1
+
+        except OSError as error:
+            error_message = str(error.args)
+
+            # Check the error message, if it contains the text below,
+            # the process is no longer running and we have thus killed the process
+            if error_message.find("No such process") > 0:
+                return self._clean()
+            else:
+                print("* Unable to kill the process %s" % error_message)
+                return False
+
+        # We were unable to kill the process due to an unknown reason
+        print("* Unable to kill the process due to an unknown reason")
+        return False
 
     def install(self):
         """Installs the service so it can be started and stopped (if it's not installed yet).
@@ -108,7 +191,7 @@ class PyServiceLinux(PyServicePlatformBase):
 
                             restart)
                                 $PYTHON_PATH $SERVICE_PATH --stop
-                                $PYTHON_PATH $SERVICE_PATH --stop
+                                $PYTHON_PATH $SERVICE_PATH --start
                                 ;;
 
                             *)
@@ -145,9 +228,19 @@ class PyServiceLinux(PyServicePlatformBase):
         if os.getuid() != 0:
             raise pyservice.NoElevatedRightsError('We need power (aka root/sudo)')
 
+        # If we're running, stop it first
+        if self.is_running():
+            if not self.stop():
+                print("* Unable to uninstall, could not stop")
+                return False
 
         # Remove the control script from /etc/init.d
-        os.remove(self.control_script)
+        try:
+            os.remove(self.control_script)
+        except Exception as error:
+            print("* Unable to uninstall, failed to remove control script: %s" % str(error))
+            return False
+
         return True
 
     def is_installed(self):
@@ -169,3 +262,21 @@ class PyServiceLinux(PyServicePlatformBase):
         """
 
         return os.path.exists(self.pid_file)
+
+    def _clean(self):
+        """This is the cleanup function we register for the forked process.
+
+        This will remove the PID file, in case the service was killed without
+        using PyService.
+
+        This function is called on function termination. See self.start.
+        """
+
+        # Yeye, pokemon, it could be that the file was already removed,
+        # not really a problem...
+        try:
+            os.remove(self.pid_file)
+        except:
+            pass
+
+        return True
