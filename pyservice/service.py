@@ -183,13 +183,15 @@ class PyService(object):
         """
 
         # Make sure the service is not already running
-        if self.platform_impl.is_running():
+        if self.is_running():
             print('* Already running')
             return False
 
         # Attempt to start the service
         print('* Starting %s' % self.name)
         result = self.platform_impl.start()
+        if not result:
+            return False
 
         # Call event handler
         self.started()
@@ -205,13 +207,15 @@ class PyService(object):
         """
 
         # Make sure that the service is running
-        if not self.platform_impl.is_running():
+        if not self.is_running():
             print('* Not running')
             return False
 
         # Attempt to stop the service
         print('* Stopping %s' % self.name)
         result = self.platform_impl.stop()
+        if not result:
+            return False
 
         # We do not call the event handler (self.stop()) here because we are killing a forked
         # process, stopped() will be called when the python script exits
@@ -227,17 +231,18 @@ class PyService(object):
         """
 
         # Make sure the service is not already installed
-        if self.platform_impl.is_installed():
+        if self.is_installed():
             print('* Already installed')
             return False
 
         # Attempt to install the service
         print('* Installing %s' % self.name)
         result = self.platform_impl.install()
+        if not result:
+            return False
 
         # Call event handler
-        self.installed()
-        return result
+        return self.installed()
 
     def _uninstall(self):
         """Uninstalls this service.
@@ -249,13 +254,20 @@ class PyService(object):
         """
 
         # Make sure the service is installed
-        if not self.platform_impl.is_installed():
+        if not self.is_installed():
             print('* Not installed')
             return False
+
+        # If the service is running, stop it first
+        if self.is_running():
+            if not self._stop():
+                return False
 
         # Attempt to uninstall the service
         print('* Uninstalling %s' % self.name)
         result = self.platform_impl.uninstall()
+        if not result:
+            return False
 
         # Call event handler
         self.uninstalled()

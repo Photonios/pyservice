@@ -94,8 +94,8 @@ class PyServiceLinux(PyServicePlatformBase):
             return False
 
         # Register cleanup function
-        atexit.register(self.service.stopped)
         atexit.register(self._clean)
+        atexit.register(self.service.stopped)
 
         # Write the PID file
         pid = str(os.getpid())
@@ -138,6 +138,12 @@ class PyServiceLinux(PyServicePlatformBase):
 
         file.close()
 
+        # Remove the PID file already to indicate that this is a stop
+        # and not abnormal program termination, when the PID file is still
+        # the service will handle this as abnormal program termination
+        # and will restart the service if auto-start is enabled
+        os.remove(self.pid_file)
+
         # Attempt to kill the process, continue to attempt to kill it until
         # the process has died with a maximum of 5 attempts
         attempts = 0
@@ -154,7 +160,7 @@ class PyServiceLinux(PyServicePlatformBase):
             # Check the error message, if it contains the text below,
             # the process is no longer running and we have thus killed the process
             if error_message.find("No such process") > 0:
-                return self._clean()
+                return True
             else:
                 print("* Unable to kill the process %s" % error_message)
                 return False
@@ -229,12 +235,6 @@ class PyServiceLinux(PyServicePlatformBase):
         if os.getuid() != 0:
             raise pyservice.NoElevatedRightsError('We need power (aka root/sudo)')
 
-        # If we're running, stop it first
-        if self.is_running():
-            if not self.stop():
-                print("* Unable to uninstall, could not stop")
-                return False
-
         # Remove the control script from /etc/init.d
         try:
             os.remove(self.control_script)
@@ -267,17 +267,24 @@ class PyServiceLinux(PyServicePlatformBase):
     def _clean(self):
         """This is the cleanup function we register for the forked process.
 
-        This will remove the PID file, in case the service was killed without
-        using PyService.
+        This function is called when the process ends. This way we can clean
+        up stuff etc.
 
-        This function is called on function termination. See self.start.
+        By checking whether the PID file still exists, we can detect whether
+        this is a normal stop, or whether we're dealing with abnormal program
+        termination.
+
+        Note: This does not prevent SIGKILL, if SIGKILL is signalled, we're dead
+        for real. The only way we can back up then is the cron job
         """
 
-        # Yeye, pokemon, it could be that the file was already removed,
-        # not really a problem...
-        try:
+        # If the PID file still exists, we're dealing with abnormal program
+        # termination and we'll restart ourselves if auto-start is enabled
+        if os.path.exists(self.pid_file) and self.auto_start:
+            service_path = os.path.join(os.getcwd(), sys.argv[0])
             os.remove(self.pid_file)
-        except:
-            pass
+            time.sleep(1)
+            os.system(sys.executable + ' ' + service_path + ' --start')
 
-        return True
+        # Normal program termination (aka service stopped)
+        return
