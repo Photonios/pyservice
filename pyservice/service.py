@@ -107,8 +107,12 @@ class PyService(object):
         if cmd_option not in self.option_map:
             cmd_option = '--run'
 
-        # Call the associated function
-        if not self.option_map[cmd_option]():
+        # Call the associated function, if something went wrong, exit with 1
+        try:
+            if not self.option_map[cmd_option]():
+                sys.exit(1)
+        except Exception as error:
+            print(str(error))
             sys.exit(1)
 
     def started(self):
