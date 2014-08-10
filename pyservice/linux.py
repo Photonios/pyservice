@@ -19,6 +19,10 @@
 #
 #####################################################################################
 
+import pyservice
+import os
+import stat
+import sys
 from .platform_base import PyServicePlatformBase
 
 class PyServiceLinux(PyServicePlatformBase):
@@ -42,6 +46,18 @@ class PyServiceLinux(PyServicePlatformBase):
 
         super().__init__(*args, **kwargs)
 
+        # We store a start script in /etc/init.d, for now we don't support
+        # system who don't have it
+        if not os.path.exists('/etc/init.d'):
+            raise pyservice.UnsupportedPlatformError('`/etc/init.d` does not exists, this is probably not a Debian based distribution.')
+
+        # Make sure the path that PID files are stored in exists
+        if not os.path.exists('/pids/'):
+            os.mkdir('/pids/')
+
+        # Build up some paths
+        self.pid_file = '/pids/%s.pid' % self.name
+        self.control_script = '/etc/init.d/%s' % self.name
 
     def start(self):
         """Starts the service (if it's installed and not running).
@@ -71,7 +87,51 @@ class PyServiceLinux(PyServicePlatformBase):
             when it failed.
         """
 
-        raise NotImplementedError('`install` not implemented in derived class')
+        # Make sure we're running with administrative privileges
+        if os.getuid() != 0:
+            raise pyservice.NoElevatedRightsError('We need power (aka root/sudo)')
+
+        # Simple bash script to write to /etc/init.d
+        start_script = """#!/bin/bash
+
+                        PYTHON_PATH="%PYTHON_PATH%"
+                        SERVICE_PATH="%SERVICE_PATH%"
+
+                        case $1 in
+                            start)
+                                $PYTHON_PATH $SERVICE_PATH --start
+                                ;;
+
+                            stop)
+                                $PYTHON_PATH $SERVICE_PATH --stop
+                                ;;
+
+                            restart)
+                                $PYTHON_PATH $SERVICE_PATH --stop
+                                $PYTHON_PATH $SERVICE_PATH --stop
+                                ;;
+
+                            *)
+                                echo 'Unknown action, try; start/stop/restart\\n'
+                        esac"""
+
+        # Determine the path of the current script and the path to the python interpreter
+        service_path = os.path.join(os.getcwd(), sys.argv[0])
+        python_path = sys.executable
+
+        # Replace the python path and the path to our service in the start script
+        start_script = start_script.replace('%PYTHON_PATH%', python_path)
+        start_script = start_script.replace('%SERVICE_PATH%', service_path)
+
+        # Write the control script to file (/etc/init.d)
+        file = open(self.control_script, 'w')
+        file.write(start_script)
+        file.close()
+
+        # Make the file executable (chmod +x)
+        stat = os.stat(self.control_script)
+        os.chmod(self.control_script, stat.st_mode | 0o0111)
+        return True
 
     def uninstall(self):
         """Uninstalls the service so it can no longer be used (if it's installed).
@@ -81,7 +141,14 @@ class PyServiceLinux(PyServicePlatformBase):
             when it failed.
         """
 
-        raise NotImplementedError('`uninstall` not implemented in derived class')
+        # Make sure we're running with administrative privileges
+        if os.getuid() != 0:
+            raise pyservice.NoElevatedRightsError('We need power (aka root/sudo)')
+
+
+        # Remove the control script from /etc/init.d
+        os.remove(self.control_script)
+        return True
 
     def is_installed(self):
         """Determines whether this service is installed on this system.
@@ -91,7 +158,7 @@ class PyServiceLinux(PyServicePlatformBase):
             when it was not installed on this system.
         """
 
-        raise NotImplementedError('`is_installed` not implemented in derived class')
+        return os.path.exists(self.control_script)
 
     def is_running(self):
         """Determines whether this service is running on this system.
@@ -101,4 +168,4 @@ class PyServiceLinux(PyServicePlatformBase):
             when it was not running on this system.
         """
 
-        raise NotImplementedError('`is_running` not implemented in derived class')
+        return os.path.exists(self.pid_file)

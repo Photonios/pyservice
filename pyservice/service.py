@@ -21,6 +21,7 @@
 
 import sys
 import platform
+import pyservice
 
 from .linux import PyServiceLinux
 
@@ -72,7 +73,7 @@ class PyService(object):
             '--uninstall': self._uninstall,
             '--start': self._start,
             '--stop': self._stop,
-            '--run': self.start
+            '--run': self.started
         }
 
         # Maps systems/platforms to the right classes
@@ -85,11 +86,17 @@ class PyService(object):
         self.description = description
         self.auto_start = auto_start
 
-        # Determine the platform class we're going to use
+        # Determine whether this platform is supported
         if platform.system() not in self.platform_map:
             print('* Unsupported platform: `%s`' % platform.system())
             return
-        self.service = self.platform_map[platform.system()](self.name, self.description, self.auto_start)
+
+        # Create a new instance of the platform specific class
+        try:
+            self.service = self.platform_map[platform.system()](self.name, self.description, self.auto_start)
+        except Exception as error:
+            print(str(error))
+            return
 
         # Are there any command line parameters?
         cmd_option = '--run'
@@ -103,30 +110,148 @@ class PyService(object):
         # Call the associated function
         self.option_map[cmd_option]()
 
-    def start(self):
-        pass
+    def started(self):
+        """Virtual, to be overridden by the derived class.
 
-    def stop(self):
-        pass
+        Called when the service is starting, the derived class should
+        start some kind of blocking loop now to prevent the service
+        from stopping.
+        """
 
-    def install(self):
-        pass
+        raise NotImplementedError('`started` not implemented in derived class')
 
-    def uninstall(self):
-        pass
+    def stopped(self):
+        """Virtual, to be overridden by the derived class.
+
+        Called when the service is stopping, the derived class should attempt
+        to stop the blocking loop it created/started when the service was
+        starting.
+        """
+
+        raise NotImplementedError('`stopped` not implemented in derived class')
+
+    def installed(self):
+        """Virtual, to be overridden by the derived class.
+
+        Called when the service is being installed, this gives the derived class
+        the chance to prepare some stuff.
+        """
+
+        raise NotImplementedError('`installed` not implemented in derived class')
+
+    def uninstalled(self):
+        """Virtual, to be overridden by the derived class.
+
+        Called when the service is being uninstalled, this gives the derived class
+        the chance to reverse anything that was installed during the installation.
+        """
+
+        raise NotImplementedError('`uninstalled` not implemented in derived class')
+
+    def is_installed(self):
+        """Determines whether this service is installed on this system.
+
+         Returns:
+            True when this service is installed on this system and false
+            when it was not installed on this system.
+        """
+
+        return self.service.is_installed()
+
+    def is_running(self):
+        """Determines whether this service is running on this system.
+
+        Returns:
+            True when this service is running on this system and false
+            when it was not running on this system.
+        """
+
+        return self.service.is_running()
 
     def _start(self):
-        print('_start')
-        pass
+        """Starts this service.
+
+        Handles this by requesting a start from the platform specific implementation.
+
+        Returns:
+            True when starting the service was a success and false when it failed.
+        """
+
+        # Make sure the service is not already running
+        if not self.service.is_running():
+            print('* Already running')
+            return False
+
+        # Attempt to start the service
+        print('* Starting %s' % self.name)
+        result = self.service.start()
+
+        # Call event handler
+        self.started()
+        return result
 
     def _stop(self):
-        print('_stop')
-        pass
+        """Stop this service.
+
+        Handles this by requesting a stop from the platform specific implementation.
+
+        Returns:
+            True when stopping the service was a success and false when it failed.
+        """
+
+        # Make sure that the service is running
+        if self.service.is_running():
+            print('* Not running')
+            return False
+
+        # Attempt to stop the service
+        print('* Stopping %s' % self.name)
+        result = self.service.stop()
+
+        # Call event handler
+        self.stopped()
+        return result
 
     def _install(self):
-        print('_install')
-        pass
+        """Installs this service.
+
+        Handles this by requesting an installation from the platform specific implementation.
+
+        Returns:
+            True when installing the service was a success and false when it failed.
+        """
+
+        # Make sure the service is not already installed
+        if self.service.is_installed():
+            print('* Already installed')
+            return False
+
+        # Attempt to install the service
+        print('* Installing %s' % self.name)
+        result = self.service.install()
+
+        # Call event handler
+        self.installed()
+        return result
 
     def _uninstall(self):
-        print('_uninstall')
-        pass
+        """Uninstalls this service.
+
+        Handles this by requesting an un-installation from the platform specific implementation.
+
+        Returns:
+            True when un-installing the service was a success and false when it failed.
+        """
+
+        # Make sure the service is installed
+        if not self.service.is_installed():
+            print('* Not installed')
+            return False
+
+        # Attempt to uninstall the service
+        print('* Uninstalling %s' % self.name)
+        result = self.service.uninstall()
+
+        # Call event handler
+        self.uninstalled()
+        return result
