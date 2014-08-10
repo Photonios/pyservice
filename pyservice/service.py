@@ -20,6 +20,9 @@
 #####################################################################################
 
 import sys
+import platform
+
+from .linux import PyServiceLinux
 
 class PyService(object):
     """Interface for classes who wish to represent a service.
@@ -72,10 +75,21 @@ class PyService(object):
             '--run': self.start
         }
 
+        # Maps systems/platforms to the right classes
+        self.platform_map = {
+            'Linux': PyServiceLinux
+        }
+
         # Store constructor parameters
         self.name = name
         self.description = description
         self.auto_start = auto_start
+
+        # Determine the platform class we're going to use
+        if platform.system() not in self.platform_map:
+            print('* Unsupported platform: `%s`' % platform.system())
+            return
+        self.service = self.platform_map[platform.system()](self.name, self.description, self.auto_start)
 
         # Are there any command line parameters?
         cmd_option = '--run'

@@ -19,16 +19,15 @@
 #
 #####################################################################################
 
-class PyServicePlatformBase(object):
-    """Base class for classes that implement service behaviour for a specific platform.
+from .platform_base import PyServicePlatformBase
 
-    All classes that implement service behaviour should derive from this class
-    and implement the virtual methods. This class can be seen as a contract.
+class PyServiceLinux(PyServicePlatformBase):
+    """Implements service functionality (using deamons) on Linux.
 
     """
 
-    def __init__(self, name, description, auto_start):
-        """Initializes a new instance of the PyServicePlatformBase class.
+    def __init__(self, *args, **kwargs):
+        """Initializes a new instance of the PyServiceLinux class.
 
         Args:
             name (str):
@@ -41,9 +40,8 @@ class PyServicePlatformBase(object):
                 starts or when the service crashes.
         """
 
-        self.name = name
-        self.description = description
-        self.auto_start = auto_start
+        super().__init__(*args, **kwargs)
+
 
     def start(self):
         """Starts the service (if it's installed and not running).
@@ -104,5 +102,3 @@ class PyServicePlatformBase(object):
         """
 
         raise NotImplementedError('`is_running` not implemented in derived class')
-
-
