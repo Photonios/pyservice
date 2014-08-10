@@ -93,7 +93,7 @@ class PyService(object):
 
         # Create a new instance of the platform specific class
         try:
-            self.service = self.platform_map[platform.system()](self.name, self.description, self.auto_start)
+            self.platform_impl = self.platform_map[platform.system()](self, self.name, self.description, self.auto_start)
         except Exception as error:
             print('* Error: %s' % str(error))
             return
@@ -161,7 +161,7 @@ class PyService(object):
             when it was not installed on this system.
         """
 
-        return self.service.is_installed()
+        return self.platform_impl.is_installed()
 
     def is_running(self):
         """Determines whether this service is running on this system.
@@ -171,7 +171,7 @@ class PyService(object):
             when it was not running on this system.
         """
 
-        return self.service.is_running()
+        return self.platform_impl.is_running()
 
     def _start(self):
         """Starts this service.
@@ -183,13 +183,13 @@ class PyService(object):
         """
 
         # Make sure the service is not already running
-        if self.service.is_running():
+        if self.platform_impl.is_running():
             print('* Already running')
             return False
 
         # Attempt to start the service
         print('* Starting %s' % self.name)
-        result = self.service.start()
+        result = self.platform_impl.start()
 
         # Call event handler
         self.started()
@@ -205,16 +205,16 @@ class PyService(object):
         """
 
         # Make sure that the service is running
-        if not self.service.is_running():
+        if not self.platform_impl.is_running():
             print('* Not running')
             return False
 
         # Attempt to stop the service
         print('* Stopping %s' % self.name)
-        result = self.service.stop()
+        result = self.platform_impl.stop()
 
-        # Call event handler
-        self.stopped()
+        # We do not call the event handler (self.stop()) here because we are killing a forked
+        # process, stopped() will be called when the python script exits
         return result
 
     def _install(self):
@@ -227,13 +227,13 @@ class PyService(object):
         """
 
         # Make sure the service is not already installed
-        if self.service.is_installed():
+        if self.platform_impl.is_installed():
             print('* Already installed')
             return False
 
         # Attempt to install the service
         print('* Installing %s' % self.name)
-        result = self.service.install()
+        result = self.platform_impl.install()
 
         # Call event handler
         self.installed()
@@ -249,13 +249,13 @@ class PyService(object):
         """
 
         # Make sure the service is installed
-        if not self.service.is_installed():
+        if not self.platform_impl.is_installed():
             print('* Not installed')
             return False
 
         # Attempt to uninstall the service
         print('* Uninstalling %s' % self.name)
-        result = self.service.uninstall()
+        result = self.platform_impl.uninstall()
 
         # Call event handler
         self.uninstalled()

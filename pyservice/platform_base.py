@@ -27,7 +27,7 @@ class PyServicePlatformBase(object):
 
     """
 
-    def __init__(self, name, description, auto_start):
+    def __init__(self, service, name, description, auto_start):
         """Initializes a new instance of the PyServicePlatformBase class.
 
         Args:
@@ -41,6 +41,7 @@ class PyServicePlatformBase(object):
                 starts or when the service crashes.
         """
 
+        self.service = service
         self.name = name
         self.description = description
         self.auto_start = auto_start

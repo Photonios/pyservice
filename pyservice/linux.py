@@ -94,6 +94,7 @@ class PyServiceLinux(PyServicePlatformBase):
             return False
 
         # Register cleanup function
+        atexit.register(self.service.stopped)
         atexit.register(self._clean)
 
         # Write the PID file
