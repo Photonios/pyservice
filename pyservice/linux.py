@@ -29,7 +29,7 @@ import time
 from .platform_base import PyServicePlatformBase
 
 class PyServiceLinux(PyServicePlatformBase):
-    """Implements service functionality (using deamons) on Linux.
+    """Implements service functionality (using daemons) on Linux.
 
     """
 
