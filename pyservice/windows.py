@@ -20,6 +20,10 @@
 #####################################################################################
 
 import pyservice
+import win32service
+import win32serviceutil
+import win32event
+import win32api
 from .platform_base import PyServicePlatformBase
 
 class PyServiceWindows(PyServicePlatformBase):
