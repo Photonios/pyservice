@@ -26,7 +26,7 @@ import win32event
 import win32api
 from .platform_base import PyServicePlatformBase
 
-class PyServiceWindows(PyServicePlatformBase):
+class PyServiceWindows(PyServicePlatformBase, win32serviceutil.ServiceFramework):
     """Implements service functionality on Windows.
 
     """
@@ -45,7 +45,11 @@ class PyServiceWindows(PyServicePlatformBase):
                 starts or when the service crashes.
         """
 
-        super().__init__(*args, **kwargs)
+        # Call the constructors of both base classes
+        PyServicePlatformBase.__init__(self, *args)
+
+        # Get the service class name (not sure why this is needed but whatever)
+        self.compete_name = win32serviceutil.GetServiceClassString(self.service.__class__)
 
     def start(self):
         """Starts the service (if it's installed and not running).
@@ -55,7 +59,7 @@ class PyServiceWindows(PyServicePlatformBase):
             it failed.
         """
 
-        raise NotImplementedError('`start` not implemented in derived class')
+        win32serviceutil.StartService(self.name)
 
     def stop(self):
         """Stops the service (if it's installed and running).
@@ -65,7 +69,7 @@ class PyServiceWindows(PyServicePlatformBase):
             when it failed.
         """
 
-        raise NotImplementedError('`stop` not implemented in derived class')
+        win32serviceutil.StopService(self.name)
 
     def install(self):
         """Installs the service so it can be started and stopped (if it's not installed yet).
@@ -75,7 +79,27 @@ class PyServiceWindows(PyServicePlatformBase):
             when it failed.
         """
 
-        raise NotImplementedError('`install` not implemented in derived class')
+        # Build up wrapper script
+        script_name = self.service.__class__.__name__
+        module_name = win32serviceutil.GetServiceClassString(self.service.__class__)
+        module_name = module_name.replace('.' + script_name, '')
+        print(module_name)
+        print(script_name)
+
+        # Enable auto-start if needed
+        service_start_type = None
+        if self.auto_start:
+            win32api.SetConsoleCtrlHandler(lambda control_handler: True, True)
+            service_start_type = win32service.SERVICE_AUTO_START
+
+        # Install the service
+        win32serviceutil.InstallService(
+            self.class_name,
+            self.name,
+            self.name,
+            startType = service_start_type,
+            description = self.description
+        )
 
     def uninstall(self):
         """Uninstalls the service so it can no longer be used (if it's installed).
@@ -85,7 +109,8 @@ class PyServiceWindows(PyServicePlatformBase):
             when it failed.
         """
 
-        raise NotImplementedError('`uninstall` not implemented in derived class')
+        # Remove the service
+        win32serviceutil.RemoveService(self.name)
 
     def is_installed(self):
         """Determines whether this service is installed on this system.
@@ -95,7 +120,11 @@ class PyServiceWindows(PyServicePlatformBase):
             when it was not installed on this system.
         """
 
-        raise NotImplementedError('`is_installed` not implemented in derived class')
+        try:
+            win32serviceutil.ChangeServiceConfig(self.class_name, self.name)
+        except:
+            return False
+        return True
 
     def is_running(self):
         """Determines whether this service is running on this system.
@@ -105,4 +134,16 @@ class PyServiceWindows(PyServicePlatformBase):
             when it was not running on this system.
         """
 
-        raise NotImplementedError('`is_running` not implemented in derived class')
+        # Read http://msdn.microsoft.com/en-us/library/windows/desktop/ms685996(v=vs.85).aspx
+        # For a complete list of statues
+        service_status = win32serviceutil.QueryServiceStatus(self.name)
+
+        # Being paused or started (or one of their pending counter parts) is treated as running
+        if service_status == win32service.SERVICE_RUNNING or \
+                        service_status == win32service.SERVICE_START_PENDING or \
+                        service_status == win32service.SERVICE_PAUSED or \
+                        service_status == win32service.SERVICE_PAUSE_PENDING:
+            return True
+
+        # Not one of the start/paused states
+        return False

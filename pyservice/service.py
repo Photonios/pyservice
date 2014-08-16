@@ -24,6 +24,7 @@ import platform
 import pyservice
 
 from .linux import PyServiceLinux
+from .windows import PyServiceWindows
 
 class PyService(object):
     """Interface for classes who wish to represent a service.
@@ -78,7 +79,8 @@ class PyService(object):
 
         # Maps systems/platforms to the right classes
         self.platform_map = {
-            'Linux': PyServiceLinux
+            'Linux': PyServiceLinux,
+            'Windows': PyServiceWindows
         }
 
         # Store constructor parameters
